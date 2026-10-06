@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CronosTec - Expediente Historiográfico</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React 18 y ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Babel para JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- html2pdf.js para descarga en PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        function App() {
+            // Estados de Sesión
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
+            const [studentName, setStudentName] = useState('');
+            const [studentCourse, setStudentCourse] = useState('');
+            const [acceptedTerms, setAcceptedTerms] = useState(false);
+            
+            const [showResetModal, setShowResetModal] = useState(false);
+
+            // Tema de la línea de tiempo
+            const [researchTheme, setResearchTheme] = useState('');
+
+            // Hitos de la línea de tiempo
+            const [milestones, setMilestones] = useState([]);
+
+            // Estado de edición de hito
+            const [editingId, setEditingId] = useState(null);
+
+            // Formulario para hito (nuevo o en edición)
+            const [newYear, setNewYear] = useState('');
+            const [newLocation, setNewLocation] = useState('');
+            const [newTitle, setNewTitle] = useState('');
+            const [newDescription, setNewDescription] = useState('');
+            const [newImage, setNewImage] = useState('');
+            const [imageType, setImageType] = useState('url');
+            const [isCompressing, setIsCompressing] = useState(false);
+
+            // Respuestas de reflexión
+            const [reflection1, setReflection1] = useState('');
+            const [reflection2, setReflection2] = useState('');
+
+            // Alertas y estado de exportación
+            const [showToast, setShowToast] = useState(false);
+            const [toastMessage, setToastMessage] = useState('');
+            const [pdfGenerating, setPdfGenerating] = useState(false);
+            const [validationError, setValidationError] = useState('');
+
+            const fileInputRef = useRef(null);
+
+            // Reglas de Evaluación
+            const pedagogicalObjective = "Construir una línea de tiempo interactiva que explique la evolución de diferentes innovaciones tecnológicas, analizando su impacto social, origen y distribución geográfica a través de un informe de rigor periodístico.";
+            const MIN_WORDS_PER_ANSWER = 30;
+
+            const allowedCourses = [
+                "5˚D", "5˚C", "6˚C", "6˚D", "6˚E", "7˚D", "7˚C", "8˚D", "8˚C", "1ME", "1MF", "2ME", "2MF"
+            ];
+
+            // Contador de palabras preciso
+            const countWords = (text) => {
+                if (!text || text.trim() === '') return 0;
+                return text.trim().split(/\s+/).length;
+            };
+
+            // Cargar progreso de LocalStorage
+            useEffect(() => {
+                try {
+                    const savedName = localStorage.getItem('cronostec_student_name');
+                    const savedCourse = localStorage.getItem('cronostec_student_course');
+                    if (savedName && savedCourse) {
+                        setStudentName(savedName);
+                        setStudentCourse(savedCourse);
+                        setIsLoggedIn(true);
+
+                        const savedMilestones = localStorage.getItem('cronostec_milestones');
+                        const savedRef1 = localStorage.getItem('cronostec_reflection_1');
+                        const savedRef2 = localStorage.getItem('cronostec_reflection_2');
+                        const savedTheme = localStorage.getItem('cronostec_research_theme');
+
+                        if (savedMilestones) setMilestones(JSON.parse(savedMilestones));
+                        if (savedRef1) setReflection1(savedRef1);
+                        if (savedRef2) setReflection2(savedRef2);
+                        if (savedTheme) setResearchTheme(savedTheme);
+                    }
+                } catch (e) {
+                    console.error("Error al cargar progreso:", e);
+                }
+            }, []);
+
+            // Guardar progreso en LocalStorage
+            useEffect(() => {
+                if (isLoggedIn) {
+                    try {
+                        localStorage.setItem('cronostec_student_name', studentName);
+                        localStorage.setItem('cronostec_student_course', studentCourse);
+                        localStorage.setItem('cronostec_milestones', JSON.stringify(milestones));
+                        localStorage.setItem('cronostec_reflection_1', reflection1);
+                        localStorage.setItem('cronostec_reflection_2', reflection2);
+                        localStorage.setItem('cronostec_research_theme', researchTheme);
+                    } catch (error) {
+                        triggerToast("⚠️ Límite de almacenamiento alcanzado. Usa enlaces para imágenes.");
+                    }
+                }
+            }, [milestones, reflection1, reflection2, researchTheme, isLoggedIn, studentName, studentCourse]);
+
+            const triggerToast = (msg) => {
+                setToastMessage(msg);
+                setShowToast(true);
+                setTimeout(() => setShowToast(false), 4500);
+            };
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                if (!studentName.trim() || !studentCourse || !acceptedTerms) {
+                    setValidationError('Completa todos los campos y acepta los términos.');
+                    return;
+                }
+                setValidationError('');
+                setIsLoggedIn(true);
+                triggerToast('¡Sesión iniciada! Tu avance se guardará automáticamente.');
+            };
+
+            const executeClearSession = () => {
+                localStorage.clear();
+                setStudentName('');
+                setStudentCourse('');
+                setAcceptedTerms(false);
+                setMilestones([]);
+                setReflection1('');
+                setReflection2('');
+                setResearchTheme('');
+                setEditingId(null);
+                setIsLoggedIn(false);
+                setShowResetModal(false);
+                triggerToast('Sesión y datos locales reiniciados.');
+            };
+
+            // FUNCIONES DE GESTIÓN DE AVANCE (RESPALDO JSON)
+            const handleSaveProgress = () => {
+                const backupData = {
+                    studentName,
+                    studentCourse,
+                    researchTheme,
+                    milestones,
+                    reflection1,
+                    reflection2,
+                    version: '3.0',
+                    timestamp: new Date().toISOString()
+                };
+
+                const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Guarda_tu_avance_${studentName.replace(/\s+/g, '_') || 'Estudiante'}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                triggerToast('💾 Tu avance se descargó en formato JSON.');
+            };
+
+            const handleLoadProgress = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const data = JSON.parse(event.target.result);
+                        if (data.studentName) setStudentName(data.studentName);
+                        if (data.studentCourse) setStudentCourse(data.studentCourse);
+                        if (data.researchTheme) setResearchTheme(data.researchTheme);
+                        if (data.milestones && Array.isArray(data.milestones)) setMilestones(data.milestones);
+                        if (data.reflection1) setReflection1(data.reflection1);
+                        if (data.reflection2) setReflection2(data.reflection2);
+                        triggerToast('¡Tu avance ha sido cargado y restaurado con éxito!');
+                    } catch (err) {
+                        triggerToast('El archivo no tiene un formato de respaldo válido.');
+                    }
+                };
+                reader.readAsText(file);
+            };
+
+            const handleLoadSample = () => {
+                const sampleMilestones = [
+                    { id: '1', year: '1876', location: 'Boston, EE.UU.', title: 'El Teléfono', description: 'Alexander Graham Bell patenta el teléfono, logrando transmitir vibraciones de voz por primera vez.', image: 'https://images.unsplash.com/photo-1512428559087-560fa5ceab42?auto=format&fit=crop&w=400&q=80' },
+                    { id: '2', year: '1969', location: 'California, EE.UU.', title: 'Nacimiento de ARPANET', description: 'Se logra transferir con éxito el primer paquete de datos digitales de máquina a máquina.', image: 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=400&q=80' },
+                    { id: '3', year: '1983', location: 'Illinois, EE.UU.', title: 'Primer Teléfono Móvil', description: 'Motorola aprueba el DynaTAC 8000X, sentando las bases físicas de la comunicación portátil.', image: 'https://images.unsplash.com/photo-1523206489230-c012c54b2b48?auto=format&fit=crop&w=400&q=80' },
+                    { id: '4', year: '2007', location: 'California, EE.UU.', title: 'El primer Smartphone Táctil', description: 'Presentación del primer teléfono inteligente con pantalla táctil capacitiva completa.', image: 'https://images.unsplash.com/photo-1510557880182-3d4d3cba35a5?auto=format&fit=crop&w=400&q=80' }
+                ];
+                setMilestones(sampleMilestones);
+                triggerToast('Ejemplos cargados. Agrega 6 hitos más para llegar al mínimo de 10.');
+            };
+
+            // Iniciar edición de hito
+            const handleStartEdit = (m) => {
+                setEditingId(m.id);
+                setNewYear(m.year);
+                setNewLocation(m.location);
+                setNewTitle(m.title);
+                setNewDescription(m.description);
+                setNewImage(m.image || '');
+                window.scrollTo({ top: 400, behavior: 'smooth' });
+                triggerToast(`Editando hito: "${m.title}".`);
+            };
+
+            // Cancelar edición
+            const handleCancelEdit = () => {
+                setEditingId(null);
+                setNewYear('');
+                setNewLocation('');
+                setNewTitle('');
+                setNewDescription('');
+                setNewImage('');
+                if (fileInputRef.current) fileInputRef.current.value = '';
+                triggerToast('Edición cancelada.');
+            };
+
+            // Guardar hito (Crear o Modificar)
+            const handleSaveMilestone = (e) => {
+                e.preventDefault();
+                if (!newYear || !newTitle || !newDescription || !newLocation) {
+                    triggerToast('Completa todos los campos obligatorios del hito.');
+                    return;
+                }
+
+                if (editingId) {
+                    const updatedList = milestones.map(m => m.id === editingId ? {
+                        ...m,
+                        year: newYear,
+                        location: newLocation,
+                        title: newTitle,
+                        description: newDescription,
+                        image: newImage || 'https://images.unsplash.com/photo-1488590528505-98d2b5aba04b?auto=format&fit=crop&w=400&q=80'
+                    } : m).sort((a, b) => {
+                        const yearA = parseInt(a.year.replace(/\D/g, '')) || 0;
+                        const yearB = parseInt(b.year.replace(/\D/g, '')) || 0;
+                        return yearA - yearB;
+                    });
+
+                    setMilestones(updatedList);
+                    setEditingId(null);
+                    triggerToast('¡Hito modificado y guardado con éxito!');
+                } else {
+                    const newMilestoneItem = {
+                        id: Date.now().toString(),
+                        year: newYear,
+                        location: newLocation,
+                        title: newTitle,
+                        description: newDescription,
+                        image: newImage || 'https://images.unsplash.com/photo-1488590528505-98d2b5aba04b?auto=format&fit=crop&w=400&q=80'
+                    };
+
+                    const updatedMilestones = [...milestones, newMilestoneItem].sort((a, b) => {
+                        const yearA = parseInt(a.year.replace(/\D/g, '')) || 0;
+                        const yearB = parseInt(b.year.replace(/\D/g, '')) || 0;
+                        return yearA - yearB;
+                    });
+
+                    setMilestones(updatedMilestones);
+                    triggerToast('Hito añadido correctamente a la línea de tiempo.');
+                }
+
+                setNewYear('');
+                setNewLocation('');
+                setNewTitle('');
+                setNewDescription('');
+                setNewImage('');
+                if (fileInputRef.current) fileInputRef.current.value = '';
+            };
+
+            const handleDeleteMilestone = (id) => {
+                setMilestones(milestones.filter(m => m.id !== id));
+                if (editingId === id) handleCancelEdit();
+                triggerToast('Hito eliminado del expediente.');
+            };
+
+            const handleImageUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                setIsCompressing(true);
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 400; 
+                        const scaleSize = MAX_WIDTH / img.width;
+                        canvas.width = MAX_WIDTH;
+                        canvas.height = img.height * scaleSize;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        setNewImage(canvas.toDataURL('image/jpeg', 0.65));
+                        setIsCompressing(false);
+                    };
+                    img.onerror = () => { setIsCompressing(false); };
+                    img.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            };
+
+            // EXPORTACIÓN PDF
+            const handleDownloadPDF = async () => {
+                if (!researchTheme.trim()) return triggerToast('Paso I: Falta definir el Tema de Investigación.');
+                if (milestones.length < 10) return triggerToast(`Paso II: Faltan hitos. Tienes ${milestones.length} de 10 obligatorios.`);
+                
+                const words1 = countWords(reflection1);
+                const words2 = countWords(reflection2);
+
+                if (words1 < MIN_WORDS_PER_ANSWER || words2 < MIN_WORDS_PER_ANSWER) {
+                    return triggerToast(`Paso III: Cada reflexión requiere al menos ${MIN_WORDS_PER_ANSWER} palabras.`);
+                }
+
+                setPdfGenerating(true);
+                triggerToast('Procesando el informe final PDF. Por favor espera...');
+
+                try {
+                    const element = document.getElementById('pdf-container');
+                    const opt = {
+                        margin: [10, 10, 10, 10],
+                        filename: `Reporte_CronosTec_${studentName.replace(/\s+/g, '_')}.pdf`,
+                        image: { type: 'jpeg', quality: 0.98 },
+                        html2canvas: { 
+                            scale: 2, 
+                            useCORS: true, 
+                            logging: false, 
+                            scrollY: 0, 
+                            scrollX: 0 
+                        },
+                        jsPDF: { unit: 'mm', format: 'letter', orientation: 'portrait' },
+                        pagebreak: { mode: ['css', 'legacy'] }
+                    };
+                    await window.html2pdf().set(opt).from(element).save();
+                    triggerToast('¡Expediente PDF generado y descargado!');
+                } catch (error) {
+                    triggerToast('Error en la compilación del PDF.');
+                } finally {
+                    setPdfGenerating(false);
+                }
+            };
+
+            const words1 = countWords(reflection1);
+            const words2 = countWords(reflection2);
+
+            const isReadyToSubmit = 
+                researchTheme.trim() !== '' && 
+                milestones.length >= 10 && 
+                words1 >= MIN_WORDS_PER_ANSWER && 
+                words2 >= MIN_WORDS_PER_ANSWER;
+
+            return (
+                <div className="min-h-screen bg-[#FAF8F5] text-stone-900 font-sans selection:bg-red-100 pb-16">
+                    
+                    {/* Alertas Float */}
+                    {showToast && (
+                        <div className="fixed bottom-5 right-5 z-50 bg-[#1C1917] text-[#FAF8F5] px-6 py-4 border-l-4 border-red-600 shadow-2xl flex items-center gap-3 max-w-md font-serif transition-all">
+                            <span className="text-red-500 font-extrabold text-sm shrink-0">ALERTA //</span>
+                            <span className="text-xs font-semibold">{toastMessage}</span>
+                        </div>
+                    )}
+
+                    {/* Modal Reiniciar */}
+                    {showResetModal && (
+                        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <div className="bg-[#FDFBF7] border-[6px] border-red-600 max-w-md w-full p-8 shadow-2xl text-center">
+                                <h3 className="font-serif text-2xl font-black text-stone-900 mb-2">¿REINICIAR TRABAJO?</h3>
+                                <div className="w-16 h-0.5 bg-stone-900 mx-auto mb-4"></div>
+                                <p className="text-sm text-stone-600 mb-6 font-serif">Se borrará tu progreso actual. Recuerda descargar tu archivo JSON de respaldo antes de continuar.</p>
+                                <div className="flex gap-4 justify-center">
+                                    <button onClick={() => setShowResetModal(false)} className="px-5 py-2.5 bg-stone-200 text-stone-800 font-bold uppercase text-xs">Cancelar</button>
+                                    <button onClick={executeClearSession} className="px-5 py-2.5 bg-red-600 text-white font-bold uppercase text-xs">Sí, Reiniciar</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* FASE 1: ACCESO */}
+                    {!isLoggedIn ? (
+                        <div className="min-h-screen flex items-center justify-center p-4 bg-[#121212] bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-stone-900 via-stone-950 to-black">
+                            <div className="max-w-xl w-full bg-[#FDFBF7] border-[14px] border-red-600 p-6 md:p-10 shadow-2xl">
+                                <div className="text-center border-b border-stone-300 pb-4 mb-4">
+                                    <span className="text-[10px] font-black tracking-[0.2em] text-stone-500 uppercase">EDICIÓN ACADÉMICA // CHILE</span>
+                                    <h1 className="text-5xl md:text-6xl font-black font-serif text-stone-900">CRONOSTEC</h1>
+                                </div>
+                                <div className="my-4 p-5 bg-[#FAF8F5] border border-stone-200 relative">
+                                    <span className="absolute -top-3 left-4 bg-red-600 text-[#FAF8F5] text-[9px] font-bold px-2 py-0.5 uppercase">OBJETIVO EDUCATIVO</span>
+                                    <p className="text-xs text-stone-600 font-serif leading-relaxed mt-2">{pedagogicalObjective}</p>
+                                </div>
+                                <form onSubmit={handleLogin} className="space-y-4 pt-4 border-t border-stone-300">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[10px] font-black text-stone-600 uppercase mb-1">Nombre Completo</label>
+                                            <input type="text" required placeholder="Ej: Francisca Silva" value={studentName} onChange={(e) => setStudentName(e.target.value)} className="w-full bg-[#FAF8F5] px-3 py-2 border border-stone-400 focus:border-red-600 text-xs font-serif outline-none" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-stone-600 uppercase mb-1">Curso</label>
+                                            <select required value={studentCourse} onChange={(e) => setStudentCourse(e.target.value)} className="w-full bg-[#FAF8F5] px-3 py-2 border border-stone-400 focus:border-red-600 text-xs font-serif outline-none">
+                                                <option value="">Selecciona...</option>
+                                                {allowedCourses.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-start gap-3 bg-[#FAF8F5] p-3 border border-stone-200">
+                                        <input type="checkbox" required checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} className="mt-0.5 text-red-600 w-3.5 h-3.5 cursor-pointer" />
+                                        <label className="text-[10px] text-stone-600 font-serif cursor-pointer">Acepto los términos de honor. Escribiré mis respuestas sin copiar y pegar texto externo.</label>
+                                    </div>
+                                    <button type="submit" disabled={!acceptedTerms} className={`w-full py-3 font-serif font-black uppercase text-sm ${acceptedTerms ? 'bg-red-600 text-white' : 'bg-stone-300 text-stone-500 cursor-not-allowed'}`}>Comenzar Expediente</button>
+                                </form>
+                            </div>
+                        </div>
+                    ) : (
+                        /* FASE 2: FORMULARIO LINEAL */
+                        <div className="w-full">
+                            {/* Cabecera con Botones JSON */}
+                            <header className="bg-[#FAF8F5] border-b-4 border-stone-900 sticky top-0 z-40 shadow-sm py-3 px-4">
+                                <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-red-600 text-white font-serif font-bold text-xl px-3 py-1">C</div>
+                                        <div>
+                                            <span className="font-serif text-xs font-bold text-stone-500 uppercase">Redactor: {studentName}</span>
+                                            <span className="font-serif text-sm font-black text-stone-900 uppercase block">{studentCourse}</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-2">
+                                        <button 
+                                            onClick={handleSaveProgress}
+                                            className="text-[10px] font-extrabold uppercase bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1.5 border border-emerald-900 shadow-sm transition-colors"
+                                            title="Descarga tu progreso en un archivo JSON"
+                                        >
+                                            💾 GUARDA TU AVANCE
+                                        </button>
+                                        <label className="text-[10px] font-extrabold uppercase bg-stone-100 hover:bg-stone-200 text-stone-800 px-3 py-1.5 border border-stone-400 cursor-pointer transition-colors">
+                                            📂 CARGAR AVANCE
+                                            <input type="file" accept=".json" onChange={handleLoadProgress} className="hidden" />
+                                        </label>
+                                        <button onClick={() => setShowResetModal(true)} className="text-[10px] font-bold uppercase bg-stone-200 text-stone-700 hover:bg-stone-300 px-2.5 py-1.5 border border-stone-400">Reiniciar</button>
+                                    </div>
+                                </div>
+                            </header>
+
+                            <main className="max-w-4xl mx-auto px-4 mt-8 space-y-10">
+                                
+                                <div className="text-center mb-8">
+                                    <h2 className="text-3xl font-serif font-black text-stone-900 uppercase tracking-tight">Expediente Historiográfico</h2>
+                                    <div className="w-16 h-0.5 bg-red-600 mx-auto mt-4 mb-4"></div>
+                                    <p className="text-sm font-serif text-stone-600 max-w-2xl mx-auto">
+                                        Completa secuencialmente las secciones. Debes registrar <strong>al menos 10 hitos tecnológicos</strong> antes de generar tu reporte PDF final.
+                                    </p>
+                                </div>
+
+                                {/* PASO I */}
+                                <section className="bg-[#FDFBF7] p-6 border-t-4 border-stone-900 shadow-sm border-x border-b border-stone-300 relative">
+                                    <span className="absolute -top-3 left-4 bg-stone-900 text-[#FAF8F5] text-[10px] font-bold px-3 py-1 uppercase tracking-wider">PASO I</span>
+                                    
+                                    <h3 className="text-xl font-serif font-black text-stone-900 uppercase mb-2 mt-2">Definición del Tema</h3>
+                                    <p className="text-xs font-serif text-stone-500 mb-4">Escribe el tema general de tu investigación (Ej: "Evolución de la Aviación", "Historia de la Computación"):</p>
+                                    
+                                    <input 
+                                        type="text"
+                                        placeholder="Escribe aquí el tema..."
+                                        value={researchTheme}
+                                        onChange={(e) => setResearchTheme(e.target.value)}
+                                        className="w-full bg-[#FAF8F5] px-4 py-3 border border-stone-400 focus:border-red-600 text-sm font-serif outline-none font-bold"
+                                    />
+                                </section>
+
+                                {/* PASO II */}
+                                <section className="bg-[#FDFBF7] p-6 border-t-4 border-stone-900 shadow-sm border-x border-b border-stone-300 relative">
+                                    <span className="absolute -top-3 left-4 bg-stone-900 text-[#FAF8F5] text-[10px] font-bold px-3 py-1 uppercase tracking-wider">PASO II</span>
+                                    
+                                    <div className="flex justify-between items-start mb-6 mt-2">
+                                        <div>
+                                            <h3 className="text-xl font-serif font-black text-stone-900 uppercase mb-2">Recopilación de Hitos</h3>
+                                            <p className="text-xs font-serif text-stone-500 max-w-xl">Añade, edita o elimina los eventos clave. Se requiere un mínimo de 10 hitos obligatorios.</p>
+                                        </div>
+                                        <button onClick={handleLoadSample} className="text-[10px] text-red-600 font-extrabold uppercase border border-red-600 px-3 py-1 bg-red-50 hover:bg-red-100 transition-colors">Cargar Ejemplo (4 Hitos)</button>
+                                    </div>
+
+                                    {/* Indicador de Progreso 10 Hitos */}
+                                    <div className="mb-6 bg-[#FAF8F5] p-4 border border-stone-200">
+                                        <div className="flex justify-between text-[11px] font-bold uppercase font-serif mb-2">
+                                            <span className="text-stone-700">Progreso de Investigación</span>
+                                            <span className={milestones.length >= 10 ? 'text-green-600' : 'text-red-600'}>
+                                                {milestones.length} de 10 obligatorios
+                                            </span>
+                                        </div>
+                                        <div className="w-full bg-stone-200 h-2">
+                                            <div className={`h-2 transition-all duration-500 ${milestones.length >= 10 ? 'bg-green-500' : 'bg-red-500'}`} style={{ width: `${Math.min((milestones.length / 10) * 100, 100)}%` }}></div>
+                                        </div>
+                                    </div>
+
+                                    {/* Formulario Crear/Editar */}
+                                    <form onSubmit={handleSaveMilestone} className={`space-y-4 p-5 border mb-8 ${editingId ? 'bg-amber-50 border-amber-500 ring-1 ring-amber-400' : 'bg-[#FAF8F5] border-stone-300'}`}>
+                                        <div className="flex justify-between items-center border-b pb-2 mb-3 border-stone-300">
+                                            <h4 className="text-xs font-black text-stone-800 uppercase tracking-widest">
+                                                {editingId ? '✏️ Modificando Hito Existente' : 'Registrar Nuevo Evento'}
+                                            </h4>
+                                            {editingId && (
+                                                <button type="button" onClick={handleCancelEdit} className="text-[10px] font-bold uppercase text-red-600 hover:underline">
+                                                    ✕ Cancelar Edición
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-[10px] font-black text-stone-600 uppercase mb-1">Época / Año *</label>
+                                                <input type="text" required placeholder="Ej: 1990" value={newYear} onChange={(e) => setNewYear(e.target.value)} className="w-full px-3 py-2 border border-stone-400 focus:border-red-600 text-xs outline-none bg-white" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-black text-stone-600 uppercase mb-1">Ubicación *</label>
+                                                <input type="text" required placeholder="Ej: Tokio, Japón" value={newLocation} onChange={(e) => setNewLocation(e.target.value)} className="w-full px-3 py-2 border border-stone-400 focus:border-red-600 text-xs outline-none bg-white" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-stone-600 uppercase mb-1">Título de la Innovación *</label>
+                                            <input type="text" required placeholder="Título del hito" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} className="w-full px-3 py-2 border border-stone-400 focus:border-red-600 text-xs outline-none bg-white" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-stone-600 uppercase mb-1">Descripción e Impacto Social *</label>
+                                            <textarea required rows="2" placeholder="Explica cómo afectó a la sociedad..." value={newDescription} onChange={(e) => setNewDescription(e.target.value)} className="w-full px-3 py-2 border border-stone-400 focus:border-red-600 text-xs outline-none bg-white" />
+                                        </div>
+                                        <div className="border border-stone-300 p-3 bg-white">
+                                            <div className="flex justify-between mb-2">
+                                                <span className="text-[10px] font-black text-stone-600 uppercase">Imagen (Opcional)</span>
+                                                <div className="flex gap-2">
+                                                    <button type="button" onClick={() => { setImageType('url'); setNewImage(''); }} className={`text-[9px] font-bold px-2 py-0.5 border ${imageType === 'url' ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-600'}`}>Enlace Web</button>
+                                                    <button type="button" onClick={() => { setImageType('upload'); setNewImage(''); }} className={`text-[9px] font-bold px-2 py-0.5 border ${imageType === 'upload' ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-600'}`}>Subir Archivo</button>
+                                                </div>
+                                            </div>
+                                            {imageType === 'url' ? (
+                                                <input type="url" placeholder="http://..." value={newImage} onChange={(e) => setNewImage(e.target.value)} className="w-full px-3 py-2 border border-stone-400 text-[11px] outline-none focus:border-red-600 bg-white" />
+                                            ) : (
+                                                <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageUpload} className="w-full px-2 py-1 border border-stone-400 text-xs cursor-pointer bg-white" />
+                                            )}
+                                        </div>
+                                        
+                                        <div className="flex gap-3 pt-2">
+                                            <button type="submit" disabled={isCompressing} className={`flex-1 py-3 text-xs font-black uppercase tracking-widest text-white transition-colors ${editingId ? 'bg-amber-600 hover:bg-amber-700' : 'bg-stone-900 hover:bg-stone-800'}`}>
+                                                {editingId ? 'GUARDAR CAMBIOS DEL HITO' : 'AÑADIR A LA CRONOLOGÍA'}
+                                            </button>
+                                            {editingId && (
+                                                <button type="button" onClick={handleCancelEdit} className="px-5 py-3 bg-stone-200 hover:bg-stone-300 text-stone-800 text-xs font-bold uppercase transition-colors">
+                                                    Cancelar
+                                                </button>
+                                            )}
+                                        </div>
+                                    </form>
+
+                                    {/* Lista renderizada con Editar / Borrar */}
+                                    {milestones.length > 0 && (
+                                        <div className="mt-8 border-t-2 border-stone-900 pt-6">
+                                            <h4 className="text-center font-serif text-lg font-black uppercase tracking-widest mb-6">{researchTheme || 'Tema Sin Título'}</h4>
+                                            <div className="space-y-4 border-l-2 border-stone-300 ml-4 pl-6 relative">
+                                                {milestones.map((m, idx) => (
+                                                    <div key={m.id} className={`relative p-4 border flex flex-col sm:flex-row gap-4 transition-all ${editingId === m.id ? 'bg-amber-50 border-amber-500 ring-2 ring-amber-400 scale-[1.01]' : 'bg-[#FAF8F5] border-stone-300'}`}>
+                                                        <div className="absolute -left-[35px] top-4 w-6 h-6 bg-red-600 flex items-center justify-center text-white text-[10px] font-bold">{idx + 1}</div>
+                                                        
+                                                        {/* Acciones del Hito */}
+                                                        <div className="absolute top-2 right-2 flex items-center gap-2">
+                                                            <button 
+                                                                type="button" 
+                                                                onClick={() => handleStartEdit(m)} 
+                                                                className="text-[10px] font-bold uppercase bg-stone-200 hover:bg-stone-300 text-stone-800 px-2 py-0.5 border border-stone-400 transition-colors"
+                                                            >
+                                                                ✏️ Editar
+                                                            </button>
+                                                            <button 
+                                                                type="button" 
+                                                                onClick={() => handleDeleteMilestone(m.id)} 
+                                                                className="text-[10px] font-bold uppercase bg-red-100 hover:bg-red-200 text-red-700 px-2 py-0.5 border border-red-300 transition-colors"
+                                                            >
+                                                                🗑️ Borrar
+                                                            </button>
+                                                        </div>
+                                                        
+                                                        {m.image && (
+                                                            <div className="w-full sm:w-24 h-24 shrink-0 bg-stone-200 border border-stone-400">
+                                                                <img src={m.image} alt={m.title} className="w-full h-full object-cover grayscale" onError={(e) => e.target.style.display = 'none'} />
+                                                            </div>
+                                                        )}
+                                                        <div className="pr-20">
+                                                            <div className="flex gap-2 mb-1">
+                                                                <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5">{m.year}</span>
+                                                                <span className="text-stone-500 text-[10px] font-bold uppercase">{m.location}</span>
+                                                            </div>
+                                                            <h5 className="font-serif font-bold text-sm text-stone-900">{m.title}</h5>
+                                                            <p className="text-xs text-stone-600 font-serif mt-1">{m.description}</p>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </section>
+
+                                {/* PASO III */}
+                                <section className="bg-[#FDFBF7] p-6 border-t-4 border-stone-900 shadow-sm border-x border-b border-stone-300 relative">
+                                    <span className="absolute -top-3 left-4 bg-stone-900 text-[#FAF8F5] text-[10px] font-bold px-3 py-1 uppercase tracking-wider">PASO III</span>
+                                    
+                                    <h3 className="text-xl font-serif font-black text-stone-900 uppercase mb-2 mt-2">Análisis Crítico Final</h3>
+                                    <p className="text-xs font-serif text-stone-500 mb-6 border-b border-stone-200 pb-4">
+                                        Responde las preguntas analíticas. <strong>El copiado y pegado está bloqueado.</strong> Se requiere un mínimo de {MIN_WORDS_PER_ANSWER} palabras por respuesta para poder concluir.
+                                    </p>
+
+                                    <div className="space-y-6">
+                                        <div>
+                                            <label className="block text-xs font-black text-stone-800 mb-2 font-serif">1. Impacto Civil y Consecuencias Imprevistas (Efectos positivos y negativos observados)</label>
+                                            <textarea 
+                                                rows="4" 
+                                                value={reflection1} 
+                                                onPaste={(e) => { e.preventDefault(); triggerToast('🚫 Acción bloqueada: El copiado y pegado está desactivado.'); }} 
+                                                onDrop={(e) => { e.preventDefault(); triggerToast('🚫 Acción bloqueada: Arrastrar texto está desactivado.'); }}
+                                                onChange={(e) => setReflection1(e.target.value)} 
+                                                placeholder={`Ej: La creación de X facilitó la comunicación, pero generó...\n\n(Debes escribir al menos ${MIN_WORDS_PER_ANSWER} palabras)`} 
+                                                className="w-full bg-[#FAF8F5] px-4 py-3 border border-stone-400 focus:border-red-600 text-xs font-serif outline-none" 
+                                            />
+                                            <div className="flex justify-between items-center text-[10px] font-bold uppercase mt-1">
+                                                <span className="text-stone-400">Pega bloqueado</span>
+                                                <span className={words1 >= MIN_WORDS_PER_ANSWER ? "text-green-600" : "text-red-500"}>
+                                                    Palabras: {words1} / {MIN_WORDS_PER_ANSWER} min.
+                                                </span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div>
+                                            <label className="block text-xs font-black text-stone-800 mb-2 font-serif">2. Proyección Futura (¿Cuál será el próximo hito en 20 años y qué problema resolverá?)</label>
+                                            <textarea 
+                                                rows="4" 
+                                                value={reflection2} 
+                                                onPaste={(e) => { e.preventDefault(); triggerToast('🚫 Acción bloqueada: El copiado y pegado está desactivado.'); }} 
+                                                onDrop={(e) => { e.preventDefault(); triggerToast('🚫 Acción bloqueada: Arrastrar texto está desactivado.'); }}
+                                                onChange={(e) => setReflection2(e.target.value)} 
+                                                placeholder={`Ej: El próximo hito será la invención de Y, lo cual resolverá...\n\n(Debes escribir al menos ${MIN_WORDS_PER_ANSWER} palabras)`} 
+                                                className="w-full bg-[#FAF8F5] px-4 py-3 border border-stone-400 focus:border-red-600 text-xs font-serif outline-none" 
+                                            />
+                                            <div className="flex justify-between items-center text-[10px] font-bold uppercase mt-1">
+                                                <span className="text-stone-400">Pega bloqueado</span>
+                                                <span className={words2 >= MIN_WORDS_PER_ANSWER ? "text-green-600" : "text-red-500"}>
+                                                    Palabras: {words2} / {MIN_WORDS_PER_ANSWER} min.
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                {/* PASO IV */}
+                                <section className="bg-stone-900 p-8 shadow-xl flex flex-col md:flex-row items-center justify-between gap-6 relative">
+                                    <div className="space-y-2 flex-1">
+                                        <h3 className="font-serif font-black text-xl text-red-500 uppercase">PASO IV: Entregar Expediente</h3>
+                                        <p className="font-serif text-[11px] text-stone-300 leading-relaxed">
+                                            Una vez que la barra de progreso esté completa, genera el reporte PDF que incluirá todas tus crónicas y las respuestas desarrolladas.
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={handleDownloadPDF}
+                                        disabled={!isReadyToSubmit || pdfGenerating}
+                                        className={`px-8 py-4 font-serif font-black uppercase text-xs shadow-lg shrink-0 w-full md:w-auto transition-colors ${
+                                            isReadyToSubmit && !pdfGenerating
+                                            ? 'bg-red-600 hover:bg-red-700 text-white cursor-pointer'
+                                            : 'bg-stone-700 text-stone-500 cursor-not-allowed'
+                                        }`}
+                                    >
+                                        {pdfGenerating ? 'Procesando PDF...' : (isReadyToSubmit ? 'Descargar Reporte PDF' : 'Completa todos los pasos')}
+                                    </button>
+                                </section>
+                            </main>
+
+                            {/* CONTENEDOR PDF OCULTO DE ALTA FIDELIDAD ANTI-ROTURA */}
+                            <div style={{ position: 'absolute', top: 0, left: 0, height: 0, overflow: 'hidden', pointerEvents: 'none' }}>
+                                <div id="pdf-container" style={{ width: '720px', padding: '30px', fontFamily: 'Georgia, Times, serif', color: '#1c1917', backgroundColor: '#FDFBF7', border: '16px solid #dc2626' }}>
+                                    
+                                    <div style={{ textAlign: 'center', borderBottom: '3px double #1c1917', paddingBottom: '12px', marginBottom: '20px' }}>
+                                        <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#78716c', letterSpacing: '2px', textTransform: 'uppercase' }}>
+                                        REPORTE ACADÉMICO OFICIAL // CHILE
+                                        </span>
+                                        <h1 style={{ fontSize: '38px', fontWeight: '900', color: '#1c1917', margin: '5px 0', letterSpacing: '-1px' }}>
+                                        CRONOSTEC
+                                        </h1>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', fontWeight: 'bold', color: '#78716c', textTransform: 'uppercase', marginTop: '4px' }}>
+                                        <span>EXPEDIENTE FINAL</span>
+                                        <span>PRENSA ACADÉMICA</span>
+                                        <span>{new Date().toLocaleDateString('es-CL')}</span>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ border: '1px solid #78716c', padding: '15px', backgroundColor: '#FAF8F5', marginBottom: '20px', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+                                        <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                                        <tbody>
+                                            <tr>
+                                                <td style={{ fontWeight: 'bold', width: '20%', padding: '4px 0' }}>Autor(a):</td>
+                                                <td style={{ width: '45%', padding: '4px 0' }}>{studentName}</td>
+                                                <td style={{ fontWeight: 'bold', width: '10%', padding: '4px 0' }}>Curso:</td>
+                                                <td style={{ width: '25%', padding: '4px 0' }}>{studentCourse}</td>
+                                            </tr>
+                                            <tr>
+                                                <td style={{ fontWeight: 'bold', padding: '4px 0' }}>Tema Estudiado:</td>
+                                                <td colSpan="3" style={{ padding: '4px 0' }}>{researchTheme || 'Sin tema definido'}</td>
+                                            </tr>
+                                        </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div style={{ borderLeft: '4px solid #dc2626', backgroundColor: '#FAF8F5', padding: '12px', marginBottom: '25px', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+                                        <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#dc2626', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                        OBJETIVO DE EVALUACIÓN:
+                                        </span>
+                                        <p style={{ fontSize: '11px', fontStyle: 'italic', margin: '4px 0 0 0', lineHeight: '1.4', color: '#44403c' }}>
+                                        "{pedagogicalObjective}"
+                                        </p>
+                                    </div>
+
+                                    <div style={{ marginBottom: '25px' }}>
+                                        <h3 style={{ fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase', borderBottom: '2px solid #1c1917', paddingBottom: '4px', marginBottom: '15px' }}>
+                                        I. LÍNEA DE TIEMPO DEL TEMA ({milestones.length} Hitos)
+                                        </h3>
+
+                                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                            <tbody>
+                                            {milestones.map((m, index) => (
+                                                <tr key={m.id} style={{ borderBottom: '1px solid #e7e5e4', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+                                                <td style={{ width: '90px', padding: '15px 10px 15px 0', verticalAlign: 'top', textAlign: 'center' }}>
+                                                    <div style={{ backgroundColor: '#dc2626', color: '#ffffff', fontSize: '10px', fontWeight: 'bold', padding: '2px 4px', marginBottom: '6px' }}>
+                                                    {m.year}
+                                                    </div>
+                                                    {m.image ? (
+                                                    <img src={m.image} alt={m.title} style={{ width: '80px', height: '65px', objectFit: 'cover', border: '1px solid #78716c' }} />
+                                                    ) : (
+                                                    <div style={{ width: '80px', height: '65px', border: '1px dashed #78716c', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                        <span style={{ fontSize: '8px', color: '#78716c' }}>Sin foto</span>
+                                                    </div>
+                                                    )}
+                                                </td>
+                                                <td style={{ padding: '15px 0', verticalAlign: 'top' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
+                                                        <h4 style={{ fontSize: '12px', fontWeight: 'bold', margin: '0', textTransform: 'uppercase' }}>{index + 1}. {m.title}</h4>
+                                                        <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#78716c' }}>📍 {m.location}</span>
+                                                    </div>
+                                                    <p style={{ fontSize: '11px', margin: '0', lineHeight: '1.4', color: '#44403c' }}>{m.description}</p>
+                                                </td>
+                                                </tr>
+                                            ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div>
+                                        <h3 style={{ fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase', borderBottom: '2px solid #1c1917', paddingBottom: '4px', marginBottom: '15px' }}>
+                                        II. ANÁLISIS EDITORIAL
+                                        </h3>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                                            <div style={{ border: '1px solid #78716c', padding: '12px', backgroundColor: '#FAF8F5', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+                                                <p style={{ fontSize: '10px', fontWeight: 'bold', color: '#1c1917', margin: '0 0 6px 0', textTransform: 'uppercase' }}>1. Impacto civil y consecuencias imprevistas</p>
+                                                <div style={{ borderTop: '1px dashed #78716c', paddingTop: '8px', fontSize: '11px', lineHeight: '1.4', color: '#44403c', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>
+                                                    {reflection1}
+                                                </div>
+                                            </div>
+                                            <div style={{ border: '1px solid #78716c', padding: '12px', backgroundColor: '#FAF8F5', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+                                                <p style={{ fontSize: '10px', fontWeight: 'bold', color: '#1c1917', margin: '0 0 6px 0', textTransform: 'uppercase' }}>2. Proyección Prospectiva (20 años)</p>
+                                                <div style={{ borderTop: '1px dashed #78716c', paddingTop: '8px', fontSize: '11px', lineHeight: '1.4', color: '#44403c', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>
+                                                    {reflection2}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ marginTop: '35px', display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#44403c', borderTop: '2px solid #1c1917', paddingTop: '15px', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+                                        <div>
+                                            <div style={{ width: '160px', borderBottom: '1px solid #78716c', height: '35px' }}></div>
+                                            <p style={{ margin: '5px 0 2px 0', fontWeight: 'bold' }}>Firma del Estudiante</p>
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{ width: '160px', borderBottom: '1px solid #78716c', height: '35px', display: 'inline-block' }}></div>
+                                            <p style={{ margin: '5px 0 2px 0', fontWeight: 'bold' }}>Firma Docente Evaluador</p>
+                                            <p style={{ margin: 0 }}>Calificación: ________</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
